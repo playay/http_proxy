@@ -25,11 +25,11 @@ def paser_request_headers(request_headers):
 
     lines = request_headers.strip().split('\r\n')
     
-    '''解析请求类型'''
+    '''解析请求方法和uri'''
     line0 = lines[0].split(' ')
     method = line0[0]
     uri = line0[1]
-    #logging.debug(str(line0))
+    logging.debug(str(line0))
     
     '''解析其他header'''
     headers = {}
@@ -38,8 +38,8 @@ def paser_request_headers(request_headers):
         key = line.pop(0)
         value = ''.join(line)
         headers[key] = value
-        
-    #logging.info(str(headers))
+    logging.debug(str(headers))
+
     '''处理目标主机和端口'''
     target_host_and_port = headers['Host'].strip().split(':')
     if len(target_host_and_port)==1:
@@ -51,8 +51,7 @@ def paser_request_headers(request_headers):
         
     return target_host, target_port, method, uri
     
-    
-    
+        
 def get_response(host, port, request):
     c = socket.socket()
     try:
@@ -98,7 +97,7 @@ def proxyer(ss):
         ss.close()
         return
     logging.info(target_host+':'+str(target_port)+' '+method+' '+uri)
-        
+    #proxy线程到这里为止都挺快的，get_response就卡了    
     '''获取目标主机的http应答'''
     response = get_response(target_host, target_port, request)
     if not response or response.endswith(' err'):
@@ -109,7 +108,7 @@ def proxyer(ss):
     logging.info(uri+' response length: '+str(len(response)))
     '''返回http应答'''
     ss.send(response)
-    #ss.close()
+    ss.close()
 
     
 def start():
