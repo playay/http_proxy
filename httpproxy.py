@@ -4,7 +4,7 @@
 
 import logging
 
-logging.basicConfig(level=logging.DEBUG,
+logging.basicConfig(level=logging.INFO,
                 format='%(asctime)s [line:%(lineno)d] %(levelname)s %(message)s',
                 #format='%(asctime)s %(filename)s[line:%(lineno)d] %(levelname)s %(message)s',
                 datefmt='%H:%M:%S',
@@ -96,11 +96,11 @@ def do_proxy(host, port, request, ss):
                 header_length = len(response_header)
                 logging.debug(response_header)
                 status_code, headers = parser_response_header(response_header)
-                print status_code
+                #print status_code
             #既没Content_Length也没Transfer_Encoding的
             #可能是304之类的
             if got_header and status_code in [304,404]:
-                print 'buf len '+ str(len(buf))
+                #print 'buf len '+ str(len(buf))
                 #logging.debug(response)
                 break
             if 'Content-Length' in headers:
@@ -128,12 +128,14 @@ def proxyer(ss):
     '''接收http请求'''
     request = ''
     while 1:
-        buf = ss.recv(1024)
+        buf = ss.recv(4096)
         request = request + buf
         if '\r\n\r\n' in request:
             break
-    if not request:
-        logging.warning('request empty,close this task')
+        if not buf:
+            break
+    if not '\r\n\r\n' in request:
+        logging.warning('request err,len = '+str(len(request))+',close this task')
         ss.close()
         return
     logging.debug('request length: '+str(len(request)))
