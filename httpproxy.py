@@ -14,10 +14,8 @@ logging.basicConfig(level=logging.INFO,
                 )
                 
 import sys
-import time
 import socket
 import thread
-import urllib2
 
 
 '''解析http响应报文头'''
@@ -33,20 +31,20 @@ def parser_response_header(response_header):
         line= lines[i].split(':')
         key = line.pop(0)
         value = ''.join(line)
-        headers[key] = value
+        headers[key] = value.strip()
     #logging.debug(str(headers))
     
     return status_code, headers
 
 
-'''解析http请求头,返回（host, port, method, uri）'''
+'''解析http请求头,返回（host, port, method, uri, headers）'''
 def parser_request_headers(request_headers):
 
     lines = request_headers.strip().split('\r\n')
     
     '''解析请求方法和uri'''
     line0 = lines[0].split(' ')
-    method = line0[0]
+    method = line0[0].upper()
     uri = line0[1]
     logging.debug(str(line0))
     
@@ -56,11 +54,11 @@ def parser_request_headers(request_headers):
         line= lines[i].split(':')
         key = line.pop(0)
         value = ''.join(line)
-        headers[key] = value
+        headers[key] = value.strip()
     logging.debug(str(headers))
 
     '''处理目标主机和端口'''
-    target_host_and_port = headers['Host'].strip().split(':')
+    target_host_and_port = headers['Host'].split(':')
     if len(target_host_and_port)==1:
         target_host = target_host_and_port[0]
         target_port = 80
@@ -68,10 +66,10 @@ def parser_request_headers(request_headers):
         target_host = target_host_and_port[0]
         target_port = int(target_host_and_port[1].strip())
         
-    return target_host, target_port, method, uri
+    return target_host, target_port, method, uri, headers
     
 '''获取目标主机的http应答, 并转发应答包'''      
-def do_proxy(host, port, request, ss):
+def do_proxy(host, port, method, uri, request_headers, request, ss):
     c = socket.socket()
     try:
         c.connect((host, port))
@@ -90,36 +88,61 @@ def do_proxy(host, port, request, ss):
         while 1:
             buf = c.recv(4096)
             response = response + buf
+            ss.send(buf)
             if not got_header and '\r\n\r\n' in response:
                 got_header = True
                 response_header = response.split('\r\n\r\n')[0] + '\r\n\r\n'
                 header_length = len(response_header)
                 logging.debug(response_header)
                 status_code, headers = parser_response_header(response_header)
-                #print status_code
-            #既没Content_Length也没Transfer_Encoding的
-            #可能是304之类的
-            if got_header and status_code in [304,404]:
-                #print 'buf len '+ str(len(buf))
-                #logging.debug(response)
-                break
-            if 'Content-Length' in headers:
-                if int(headers['Content-Length'].strip()) == len(response)-header_length:
+                logging.debug(str(status_code))
+
+            if got_header:
+                '''
+                没有内容，直接返回报文头就行
+                304 Not Modified 
+                '''
+                if status_code in [304]:
                     break
-            if 'Transfer-Encoding' in headers:
-                if not buf:
-                    logging.debug('not buf')
-                    break 
-            if not buf:
-                logging.debug('not buf')
-                break         
+                '''
+                TODO 206  Partial Content 新浪有Content-Length这个要怎么收。。。
+                201 已创建 见过201有Transfer-Encoding属性
+                503 服务器问题 与200一样，返回一个正常网页
+                404 网页不存在 与200一样，返回一个正常网页
+                301 永久性转移 百度的301包含 Content-Length
+                302 Found 暂时性重定向 百度的302包含 Content-Length
+                '''
+                if status_code in [200,201,503,404,301,302]:
+                    if 'Content-Length' in headers:
+                        if int(headers['Content-Length']) <= len(response)-header_length:
+                            break
+                    if 'Transfer-Encoding' in headers:
+                        if not buf:
+                            logging.debug('not buf in tranfer-encoding')
+                            break 
+                    if not 'Content-Length' in headers and not 'Transfer-Encoding' in headers and not buf:
+                        logging.debug('not buf')
+                        break 
+                else:#未知的响应状态码
+                    if 'Content-Length' in headers:
+                        if int(headers['Content-Length']) <= len(response)-header_length:
+                            break
+                    if 'Transfer-Encoding' in headers:
+                        if not buf:
+                            logging.debug('not buf in tranfer-encoding')
+                            break 
+                    if not 'Content-Length' in headers and not 'Transfer-Encoding' in headers and not buf:
+                        logging.debug('not buf')
+                        break         
         #logging.debug(response)
-        logging.info('response len '+ str(len(response)))
+        logging.info(str(status_code)+' response len'+str(len(response)-header_length)+uri)
     except Exception, e:
         logging.warning(str(type(e))+' '+str(e)+' err')
+        c.close()
+        ss.close()
     c.close()
-    if response:
-        ss.send(response)
+    #if response:
+        #ss.send(response)
     ss.close()
 
 
@@ -127,11 +150,26 @@ def proxyer(ss):
     logging.debug(ss)
     '''接收http请求'''
     request = ''
+    got_header = False
+    headers = {}
     while 1:
         buf = ss.recv(4096)
         request = request + buf
-        if '\r\n\r\n' in request:
-            break
+        if not got_header and '\r\n\r\n' in request:
+            got_header = True
+            request_header = request.split('\r\n\r\n')[0] + '\r\n\r\n'
+            header_length = len(request_header)
+            host, port, method, uri, headers = parser_request_headers(request_header)
+            if method in ['GET']:
+                break
+        if got_header and method in ['POST']:
+            if 'Content-Length' in headers:
+                if int(headers['Content-Length']) <= len(request)-header_length:
+                    break
+            else:
+                logging.warning('no Content-Length in POST request,close this task')
+                ss.close()
+                return
         if not buf:
             break
     if not '\r\n\r\n' in request:
@@ -141,18 +179,16 @@ def proxyer(ss):
     logging.debug('request length: '+str(len(request)))
     logging.debug('\n'+request)
     
-    '''解析http请求，得到目标主机和端口''' 
-    target_host, target_port, method, uri = parser_request_headers(request)
-    if not target_host or not target_port or not method.upper() in ['GET','POST']:
+    if not host or not port or not method in ['GET','POST']:
         logging.warning('parser request waring('+
-        target_host+':'+str(target_port)+' '+method
+        host+':'+str(port)+' '+method
         +'): ,close this task')
         ss.close()
         return
-    logging.info(target_host+':'+str(target_port)+' '+method+' '+uri)
+    logging.info(host+':'+str(port)+' '+method+' '+uri)
     
     '''获取目标主机的http应答, 并转发应答包'''
-    do_proxy(target_host, target_port, request, ss)
+    do_proxy(host, port, method, uri, headers, request, ss)
     
 def start():
     address = ('127.0.0.1',int(sys.argv[1]))
