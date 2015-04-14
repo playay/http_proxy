@@ -41,31 +41,33 @@ def parser_response_header(response_header):
 def parser_request_headers(request_headers):
 
     lines = request_headers.strip().split('\r\n')
+    try:
+        '''解析请求方法和uri'''
+        line0 = lines[0].split(' ')
+        method = line0[0].upper()
+        uri = line0[1]
+        logging.debug(str(line0))
     
-    '''解析请求方法和uri'''
-    line0 = lines[0].split(' ')
-    method = line0[0].upper()
-    uri = line0[1]
-    logging.debug(str(line0))
-    
-    '''解析其他header'''
-    headers = {}
-    for i in range(1,len(lines)):
-        line= lines[i].split(':')
-        key = line.pop(0)
-        value = ''.join(line)
-        headers[key] = value.strip()
-    logging.debug(str(headers))
+        '''解析其他header'''
+        headers = {}
+        for i in range(1,len(lines)):
+            line= lines[i].split(':')
+            key = line.pop(0)
+            value = ''.join(line)
+            headers[key] = value.strip()
+        logging.debug(str(headers))
 
-    '''处理目标主机和端口'''
-    target_host_and_port = headers['Host'].split(':')
-    if len(target_host_and_port)==1:
-        target_host = target_host_and_port[0]
-        target_port = 80
-    else:
-        target_host = target_host_and_port[0]
-        target_port = int(target_host_and_port[1].strip())
-        
+        '''处理目标主机和端口'''
+        target_host_and_port = headers['Host'].split(':')
+        if len(target_host_and_port)==1:
+            target_host = target_host_and_port[0]
+            target_port = 80
+        else:
+            target_host = target_host_and_port[0]
+            target_port = int(target_host_and_port[1].strip())
+    except Exception, e: 
+        logging.warning(str(type(e))+' '+str(e)+' err')
+        return None,None,None,None,None
     return target_host, target_port, method, uri, headers
     
 '''获取目标主机的http应答, 并转发应答包'''      
@@ -158,6 +160,7 @@ def do_proxy(host, port, method, uri, request_headers, request, ss):
 
 def proxyer(ss):
     logging.debug(ss)
+    print id(ss)
     '''接收http请求'''
     request = ''
     got_header = False
@@ -170,6 +173,10 @@ def proxyer(ss):
             request_header = request.split('\r\n\r\n')[0] + '\r\n\r\n'
             header_length = len(request_header)
             host, port, method, uri, headers = parser_request_headers(request_header)
+            if not host or not port or not method in ['HEAD','GET','POST']:
+                logging.warning('parser request err ,close this task')
+                ss.close()
+                return
             if method in ['GET','HEAD']:
                 break
         if got_header and method in ['POST']:
@@ -188,13 +195,6 @@ def proxyer(ss):
         return
     logging.debug('request length: '+str(len(request)))
     logging.debug('\n'+request)
-    
-    if not host or not port or not method in ['HEAD','GET','POST']:
-        logging.warning('parser request waring('+
-        host+':'+str(port)+' '+method
-        +'): ,close this task')
-        ss.close()
-        return
     logging.info(host+':'+str(port)+' '+method+' '+uri)
     
     '''获取目标主机的http应答, 并转发应答包'''
@@ -208,6 +208,7 @@ def start():
     s.listen(100)
     while 1:
         ss, add = s.accept()
+        print id(ss)
         thread.start_new_thread(proxyer, (ss,))
        
 if __name__ == '__main__':
