@@ -4,7 +4,7 @@
 
 import logging
 
-logging.basicConfig(level=logging.INFO,
+logging.basicConfig(level=logging.ERROR,
                 format='%(asctime)s [line:%(lineno)d] %(levelname)s %(message)s',
                 #format='%(asctime)s %(filename)s[line:%(lineno)d] %(levelname)s %(message)s',
                 datefmt='%H:%M:%S',
@@ -12,11 +12,13 @@ logging.basicConfig(level=logging.INFO,
                 #filename='myapp.log',
                 #filemode='w'
                 )
-                
-import sys
-import socket
-import thread
 
+import sys
+from gevent import monkey; monkey.patch_socket()
+from gevent.server import StreamServer
+import socket
+
+import count
 
 def parser_response_header(response_header):
     '''解析http响应报文头'''
@@ -69,6 +71,7 @@ def parser_request_headers(request_headers):
         return None,None,None,None,None
     return target_host, target_port, method, uri, headers
     
+    
 def do_proxy(host, port, method, uri, request_headers, request, ss):
     '''获取目标主机的http应答, 并转发应答包'''      
     c = socket.socket()
@@ -79,6 +82,8 @@ def do_proxy(host, port, method, uri, request_headers, request, ss):
         c.close()
         ss.send(str(type(e))+' '+str(e)+' err')
         ss.close()
+        count.dic.pop(uri)
+        print count.dic,len(count.dic)
         return
     try:   
         c.send(request)
@@ -148,18 +153,21 @@ def do_proxy(host, port, method, uri, request_headers, request, ss):
 
 
         #logging.debug(response)
-        logging.info(str(status_code)+' response len'+str(len(response)-header_length)+uri)
+        logging.info(str(status_code)+' response len'+str(len(response)-header_length)+uri[:0])
     except Exception, e:
         logging.warning(str(type(e))+' '+str(e)+' err')
         c.close()
         ss.close()
+        count.dic.pop(uri)
+        print count.dic,len(count.dic)
     c.close()
     ss.close()
+    count.dic.pop(uri)
+    print count.dic,len(count.dic)
 
 
-def proxyer(ss):
+def proxyer(ss, add):
     logging.debug(ss)
-    print id(ss)
     '''接收http请求'''
     request = ''
     got_header = False
@@ -173,9 +181,13 @@ def proxyer(ss):
             header_length = len(request_header)
             host, port, method, uri, headers = parser_request_headers(request_header)
             if not host or not port or not method in ['HEAD','GET','POST']:
-                logging.warning('parser request err ,close this task')
+                logging.warning('parser request err or method not support ,close this task')
                 ss.close()
+                count.dic.pop(uri)
+                print count.dic,len(count.dic)
                 return
+            count.dic[uri] = 1
+            print count.dic,len(count.dic)
             if method in ['GET','HEAD']:
                 break
         if got_header and method in ['POST']:
@@ -185,30 +197,25 @@ def proxyer(ss):
             else:
                 logging.warning('no Content-Length in POST request,close this task')
                 ss.close()
+                count.dic.pop(uri)
+                print count.dic,len(count.dic)
                 return
         if not buf:
             break
     if not '\r\n\r\n' in request:
         logging.warning('request err,len = '+str(len(request))+',close this task')
         ss.close()
+        count.dic.pop(uri)
+        print count.dic,len(count.dic)
         return
     logging.debug('request length: '+str(len(request)))
     logging.debug('\n'+request)
-    logging.info(host+':'+str(port)+' '+method+' '+uri)
+    logging.info(host+':'+str(port)+' '+method+' '+uri[:0])
     
     '''获取目标主机的http应答, 并转发应答包'''
     do_proxy(host, port, method, uri, headers, request, ss)
     
-def start():
-    address = ('127.0.0.1',int(sys.argv[1]))
-    #address = ('127.0.0.1',31500)
-    s = socket.socket()
-    s.bind(address)
-    s.listen(100)
-    while 1:
-        ss, add = s.accept()
-        print id(ss)
-        thread.start_new_thread(proxyer, (ss,))
-       
+     
 if __name__ == '__main__':
-   start()
+    server = StreamServer(('127.0.0.1', int(sys.argv[1])), proxyer)
+    server.serve_forever()  

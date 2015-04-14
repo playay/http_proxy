@@ -1,16 +1,23 @@
 #httpproxy.py
 python socket 实现的http代理   
 
+##依赖库
+http://git.oschina.net/chenyanclyz/httpproxy/blob/master/gevent-1.0.1.tar.gz
+
+解压; python setup.py build; sudo python setup.py install
 
 ##TODO
 ###
-+ 以任务队列形式传递分配的socket，只有分配socket的主线程和一两个执行代理的线程（而不是像0.1版本中那样，来一个请求，分配一个socket时，每个socket都启动一个新线程）   
-+ 完善对各种status_code的响应报文的判断（已测试通过：200,201,204,206,301,302,303,304,307,404,413,414,500,501,503,505）   
++ 用gevent来提高性能；设置超时时间，慢到人家网页都关了！还下毛啊！！
 + 尝试Connection  keep-alive   
 + 完善对http请求的各种method的支持（已测试通过：GET,POST,HEAD)
 + 添加https支持   
 
 ##更新日志
+
+###0.5
++ 使用单进程单线程的gevent提高性能
++ 可怕的腾讯首页。。
 
 ###0.4
 + 支持HEAD请求   
