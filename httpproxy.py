@@ -18,8 +18,8 @@ import socket
 import thread
 
 
-'''解析http响应报文头'''
 def parser_response_header(response_header):
+    '''解析http响应报文头'''
     Transfer_Encoding = False
     Content_Length = 0
     status_code = 0
@@ -37,9 +37,8 @@ def parser_response_header(response_header):
     return status_code, headers
 
 
-'''解析http请求头,返回（host, port, method, uri, headers）'''
 def parser_request_headers(request_headers):
-
+    '''解析http请求头,返回（host, port, method, uri, headers）'''
     lines = request_headers.strip().split('\r\n')
     try:
         '''解析请求方法和uri'''
@@ -70,8 +69,8 @@ def parser_request_headers(request_headers):
         return None,None,None,None,None
     return target_host, target_port, method, uri, headers
     
-'''获取目标主机的http应答, 并转发应答包'''      
 def do_proxy(host, port, method, uri, request_headers, request, ss):
+    '''获取目标主机的http应答, 并转发应答包'''      
     c = socket.socket()
     try:
         c.connect((host, port))
