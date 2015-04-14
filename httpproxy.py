@@ -100,40 +100,52 @@ def do_proxy(host, port, method, uri, request_headers, request, ss):
             if got_header:
                 '''
                 没有内容，直接返回报文头就行
+                204 No Content
                 304 Not Modified 
                 '''
-                if status_code in [304]:
+                if method in ['HEAD']:
                     break
-                '''
-                TODO 206  Partial Content 新浪有Content-Length这个要怎么收。。。
-                201 已创建 见过201有Transfer-Encoding属性
-                503 服务器问题 与200一样，返回一个正常网页
-                404 网页不存在 与200一样，返回一个正常网页
-                301 永久性转移 百度的301包含 Content-Length
-                302 Found 暂时性重定向 百度的302包含 Content-Length
-                '''
-                if status_code in [200,201,503,404,301,302]:
-                    if 'Content-Length' in headers:
-                        if int(headers['Content-Length']) <= len(response)-header_length:
-                            break
-                    if 'Transfer-Encoding' in headers:
-                        if not buf:
-                            logging.debug('not buf in tranfer-encoding')
+                if method in ['GET', 'POST']:
+                    if status_code in [304,204]:
+                        break
+                    '''
+                    201 Created 已创建 见过201有Transfer-Encoding属性
+                    202 Accepted 请求已接受，但服务端未处理
+                    206 Partial Content 新浪有Content-Length,只管正常返回这个部分内容就行了，客户端请求时就只要这部分
+                    301 Moved Permanently 永久性转移 百度的301包含 Content-Length
+                    302 (303,307这三个表示相同含义)Found 暂时性重定向 百度的302包含 Content-Length
+                    404 未找到资源 与200一样，返回一个正常网页
+                    413 Request Entity Too Large 请求实体太大
+                    414 Request URI Too Long 请求URI太长
+                    500 Internal Server Error 内部服务器错误
+                    501 Not Implemented 未实现
+                    503 服务器问题 与200一样，返回一个正常网页
+                    505 HTTP Version Not Supported 不支持的HTTP版本
+                    '''
+                    if status_code in [200,201,206,301,302,303,307,404,413,414,500,501,503,505]:
+                        if 'Transfer-Encoding' in headers:
+                            if not buf:
+                                logging.debug('not buf in tranfer-encoding')
+                                break 
+                        if 'Content-Length' in headers:
+                            if int(headers['Content-Length']) <= len(response)-header_length:
+                                break
+                        if not 'Content-Length' in headers and not 'Transfer-Encoding' in headers and not buf:
+                            logging.debug('not buf')
                             break 
-                    if not 'Content-Length' in headers and not 'Transfer-Encoding' in headers and not buf:
-                        logging.debug('not buf')
-                        break 
-                else:#未知的响应状态码
-                    if 'Content-Length' in headers:
-                        if int(headers['Content-Length']) <= len(response)-header_length:
-                            break
-                    if 'Transfer-Encoding' in headers:
-                        if not buf:
-                            logging.debug('not buf in tranfer-encoding')
+                    else:#其他响应状态码
+                        if 'Transfer-Encoding' in headers:
+                            if not buf:
+                                logging.debug('not buf in tranfer-encoding')
+                                break 
+                        if 'Content-Length' in headers:
+                            if int(headers['Content-Length']) <= len(response)-header_length:
+                                break
+                        if not 'Content-Length' in headers and not 'Transfer-Encoding' in headers and not buf:
+                            logging.debug('not buf')
                             break 
-                    if not 'Content-Length' in headers and not 'Transfer-Encoding' in headers and not buf:
-                        logging.debug('not buf')
-                        break         
+
+
         #logging.debug(response)
         logging.info(str(status_code)+' response len'+str(len(response)-header_length)+uri)
     except Exception, e:
@@ -141,8 +153,6 @@ def do_proxy(host, port, method, uri, request_headers, request, ss):
         c.close()
         ss.close()
     c.close()
-    #if response:
-        #ss.send(response)
     ss.close()
 
 
@@ -160,7 +170,7 @@ def proxyer(ss):
             request_header = request.split('\r\n\r\n')[0] + '\r\n\r\n'
             header_length = len(request_header)
             host, port, method, uri, headers = parser_request_headers(request_header)
-            if method in ['GET']:
+            if method in ['GET','HEAD']:
                 break
         if got_header and method in ['POST']:
             if 'Content-Length' in headers:
@@ -179,7 +189,7 @@ def proxyer(ss):
     logging.debug('request length: '+str(len(request)))
     logging.debug('\n'+request)
     
-    if not host or not port or not method in ['GET','POST']:
+    if not host or not port or not method in ['HEAD','GET','POST']:
         logging.warning('parser request waring('+
         host+':'+str(port)+' '+method
         +'): ,close this task')
