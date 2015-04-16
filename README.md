@@ -8,12 +8,15 @@ http://git.oschina.net/chenyanclyz/httpproxy/blob/master/gevent-1.0.1.tar.gz
 
 ##TODO
 ###
-+ 用gevent来提高性能；设置超时时间，慢到人家网页都关了！还下毛啊！！
++ 客户端取消请求后，及时结束任务
 + 尝试Connection  keep-alive   
 + 完善对http请求的各种method的支持（已测试通过：GET,POST,HEAD)
 + 添加https支持   
 
 ##更新日志
+###0.6
++ 实现多进程！！！
++ 修复response为空时，不退出接收的死循环，导致的cpu使用率100%的bug（腾讯首页就有这种response）
 
 ###0.5
 + 使用单进程单线程的gevent提高性能
