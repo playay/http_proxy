@@ -1,10 +1,7 @@
 #coding:utf-8
-#qpy:2
-#qpy:console
 
 import logging
-
-logging.basicConfig(level=logging.ERROR,
+logging.basicConfig(level=logging.DEBUG,
                 format='%(asctime)s [line:%(lineno)d] %(levelname)s %(message)s',
                 #format='%(asctime)s %(filename)s[line:%(lineno)d] %(levelname)s %(message)s',
                 datefmt='%H:%M:%S',
@@ -17,12 +14,12 @@ import sys, os
 #from gevent import monkey; monkey.patch_socket()
 from gevent import socket
 from gevent.server import StreamServer
-from gevent.pool import Pool as gPool
+#from gevent.pool import Pool as gPool
 from multiprocessing import cpu_count
 #import socket
 
 
-import count
+#import count
 
 def parser_response_header(response_header):
     '''解析http响应报文头'''
@@ -99,62 +96,33 @@ def do_proxy(host, port, method, uri, request_headers, request, ss):
             if not got_header and '\r\n\r\n' in response:
                 got_header = True
                 response_header = response.split('\r\n\r\n')[0] + '\r\n\r\n'
-                header_length = len(response_header)
                 logging.debug(response_header)
+                header_length = len(response_header)
                 status_code, headers = parser_response_header(response_header)
-                logging.debug(str(status_code))
+                #logging.debug(str(status_code))
 
             if got_header:
-                '''
-                没有内容，直接返回报文头就行
-                204 No Content
-                301 Moved Permanently 永久性转移 
-                302 (303,307这三个表示相同含义)Found 暂时性重定向 
-                304 Not Modified 
-                '''
+                '''没有内容，直接返回报文头就行'''
                 if method in ['HEAD']:
                     break
                 if method in ['GET', 'POST']:
                     if status_code in [204,301,302,303,304,307]:
                         break
-                    '''
-                    201 Created 已创建 见过201有Transfer-Encoding属性
-                    202 Accepted 请求已接受，但服务端未处理
-                    206 Partial Content 新浪有Content-Length,只管正常返回这个部分内容就行了，客户端请求时就只要这部分
-                    404 未找到资源 与200一样，返回一个正常网页
-                    413 Request Entity Too Large 请求实体太大
-                    414 Request URI Too Long 请求URI太长
-                    500 Internal Server Error 内部服务器错误
-                    501 Not Implemented 未实现
-                    503 服务器问题 与200一样，返回一个正常网页
-                    505 HTTP Version Not Supported 不支持的HTTP版本
-                    '''
-                    if status_code in [200,201,206,404,413,414,500,501,503,505]:
-                        if 'Transfer-Encoding' in headers:
-                            if not buf:
-                                logging.debug('not buf in tranfer-encoding')
-                                break 
-                        if 'Content-Length' in headers:
-                            if int(headers['Content-Length']) <= len(response)-header_length:
-                                break
-                        if not 'Content-Length' in headers and not 'Transfer-Encoding' in headers and not buf:
-                            logging.debug('not buf')
+                    '''正常的判断是否接收完响应的方式'''
+                    if 'Transfer-Encoding' in headers:
+                        if not buf:
+                            logging.debug('not buf in tranfer-encoding')
                             break 
-                    else:#其他响应状态码
-                        if 'Transfer-Encoding' in headers:
-                            if not buf:
-                                logging.debug('not buf in tranfer-encoding')
-                                break 
-                        if 'Content-Length' in headers:
-                            if int(headers['Content-Length']) <= len(response)-header_length:
-                                break
-                        if not 'Content-Length' in headers and not 'Transfer-Encoding' in headers and not buf:
-                            logging.debug('not buf')
+                    if 'Content-Length' in headers:
+                        if int(headers['Content-Length']) <= len(response)-header_length:
+                            break
+                    if not 'Content-Length' in headers and not 'Transfer-Encoding' in headers and not buf:
+                        logging.debug('not buf')
+                        break 
             if not buf:
                 logging.error('response not buf')
                 break
-        #logging.debug(response)
-        logging.info(str(status_code)+' response len'+str(len(response)-header_length)+uri[:0])
+        #logging.info(str(status_code)+' response len'+str(len(response)-header_length)+uri[:0])
     except Exception, e:
         logging.warning(str(type(e))+' '+str(e)+' err')
         c.close()
@@ -164,7 +132,7 @@ def do_proxy(host, port, method, uri, request_headers, request, ss):
     ss.close()
 
 def proxyer(ss, add):
-    logging.debug(ss)
+    #logging.debug(ss)
     '''接收http请求'''
     request = ''
     got_header = False
@@ -197,23 +165,31 @@ def proxyer(ss, add):
         logging.warning('request err,len = '+str(len(request))+',close this task')
         ss.close()
         return
-    logging.debug('request length: '+str(len(request)))
+    #logging.debug('request length: '+str(len(request)))
     logging.debug('\n'+request)
-    logging.info(host+':'+str(port)+' '+method+' '+uri[:0])
+    #logging.info(host+':'+str(port)+' '+method+' '+uri[:0])
     
     '''获取目标主机的http应答, 并转发应答包'''
-    count.dic[os.getpid()] = count.dic.get(os.getpid(),0) + 1
-    print count.dic,uri
+    #count.dic[os.getpid()] = count.dic.get(os.getpid(),0) + 1
+    #print count.dic,uri
     do_proxy(host, port, method, uri, headers, request, ss)
-    count.dic[os.getpid()] = count.dic[os.getpid()] - 1
-    print count.dic
+    #count.dic[os.getpid()] = count.dic[os.getpid()] - 1
+    #print count.dic
     
 if __name__ == '__main__':
-    gpool = gPool(128)
-    server = StreamServer(('127.0.0.1', int(sys.argv[1])), proxyer,spawn=gpool)    
-    server.max_accept  = 1
+    #gpool = gPool(128)
+    server = StreamServer(('', int(sys.argv[1])), proxyer)#, spawn=gpool)    
+    if cpu_count()>1: server.max_accept  = 1
     server.start() 
+    pid_list = []
     for i in range(cpu_count()):
         pid = os.fork()
         if pid == 0: 
+            del pid_list
             server.serve_forever() 
+        else:
+            pid_list.append(str(pid))
+    with open(sys.path[0]+'/pid','w') as f:
+        f.write('|'.join(pid_list))
+    print('start processes: '+'|'.join(pid_list)+' ok')
+        
