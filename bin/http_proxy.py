@@ -1,7 +1,7 @@
 #coding:utf-8
 
 import logging
-logging.basicConfig(level=logging.DEBUG,
+logging.basicConfig(level=logging.ERROR,
                 format='%(asctime)s [line:%(lineno)d] %(levelname)s %(message)s',
                 #format='%(asctime)s %(filename)s[line:%(lineno)d] %(levelname)s %(message)s',
                 datefmt='%H:%M:%S',
@@ -10,15 +10,17 @@ logging.basicConfig(level=logging.DEBUG,
                 #filemode='w'
                 )
 
-import sys, os
+import sys, os, re
 import gevent
 from gevent import socket
 from gevent.server import StreamServer
 from multiprocessing import cpu_count
 
-import count
+#import count
 
-tunnel_ok = '''HTTP/1.1 200 Connection Established\r\n\r\n'''
+TUNNEL_OK = '''HTTP/1.1 200 Connection Established\r\nProxy-Connection: close\r\n\r\n'''
+TUNNEL_FAIL = '''HTTP/1.1 407 Unauthorized\r\nProxy-Connection: close\r\n\r\n'''
+TUNNEL_UNAUTH = '''HTTP/1.1 407 Unauthorized\r\nProxy-Connection: close\r\n\r\n'''
 
 def parser_response_header(response_header):
     '''解析http响应报文头'''
@@ -96,7 +98,7 @@ def do_proxy(host, port, method, uri, request_headers, request, ss):
             if not got_header and '\r\n\r\n' in response:
                 got_header = True
                 response_header = response.split('\r\n\r\n')[0] + '\r\n\r\n'
-                logging.debug(response_header)
+                #logging.debug(response)
                 header_length = len(response_header)
                 status_code, headers = parser_response_header(response_header)
 
@@ -139,6 +141,7 @@ def dock_socket(recv, send):
     except Exception, e:
         recv.close()
         send.close()
+        return
     recv.close()
     send.close()
 
@@ -147,8 +150,10 @@ def do_tunnel(host, port, ss):
     try:
         c.connect((host,port))
     except Exception, e:
-        logging.warning('connect err'+host+':'+port)
-    ss.send(tunnel_ok)
+        logging.warning('connect err'+host+':'+str(port))
+        ss.send(TUNNEL_FAIL)
+        return
+    ss.send(TUNNEL_OK)
     gevent.joinall([
         gevent.spawn(dock_socket, ss, c),
         gevent.spawn(dock_socket, c, ss),
@@ -188,17 +193,24 @@ def proxyer(ss, add):
         logging.warning('request err,len = '+str(len(request))+',close this task')
         ss.close()
         return
-    logging.debug('\n'+request)
+    '''按协议要求，修改报文头'''
+    if method in ['GET','POST','HEAD']:
+        request_header = re.sub('Proxy-Connection: .+\r\n','',request_header)
+        request_header = re.sub('Connection: .+','',request_header)
+        request_header = re.sub('\r\n\r\n','\r\nConnection: close\r\n\r\n',request_header)
+        request_header = re.sub(uri,uri[uri.index('/',8):],request_header)
+        request = request_header+request[header_length:]
     
+    #logging.debug('\n'+request)
     '''获取目标主机的http应答, 并转发应答包'''
-    count.dic[os.getpid()] = count.dic.get(os.getpid(),0) + 1
-    print count.dic,uri
+    #count.dic[os.getpid()] = count.dic.get(os.getpid(),0) + 1
+    #print count.dic,uri
     if method in ['CONNECT']:
         do_tunnel(host, port, ss)
     else:
         do_proxy(host, port, method, uri, headers, request, ss)
-    count.dic[os.getpid()] = count.dic[os.getpid()] - 1
-    print count.dic
+    #count.dic[os.getpid()] = count.dic[os.getpid()] - 1
+    #print count.dic,'down:',uri
     
 if __name__ == '__main__':
     server = StreamServer(('', int(sys.argv[1])), proxyer)   
