@@ -11,15 +11,14 @@ logging.basicConfig(level=logging.DEBUG,
                 )
 
 import sys, os
-#from gevent import monkey; monkey.patch_socket()
+import gevent
 from gevent import socket
 from gevent.server import StreamServer
-#from gevent.pool import Pool as gPool
 from multiprocessing import cpu_count
-#import socket
 
+import count
 
-#import count
+tunnel_ok = '''HTTP/1.1 200 Connection Established\r\n\r\n'''
 
 def parser_response_header(response_header):
     '''解析http响应报文头'''
@@ -35,7 +34,6 @@ def parser_response_header(response_header):
         key = line.pop(0)
         value = ''.join(line)
         headers[key] = value.strip()
-    #logging.debug(str(headers))
     
     return status_code, headers
 
@@ -48,7 +46,6 @@ def parser_request_headers(request_headers):
         line0 = lines[0].split(' ')
         method = line0[0].upper()
         uri = line0[1]
-        #logging.debug(str(line0))
     
         '''解析其他header'''
         headers = {}
@@ -57,13 +54,16 @@ def parser_request_headers(request_headers):
             key = line.pop(0)
             value = ''.join(line)
             headers[key] = value.strip()
-        #logging.debug(str(headers))
 
         '''处理目标主机和端口'''
-        target_host_and_port = headers['Host'].split(':')
+        if method in ['CONNECT']:
+            target_host_and_port = uri.split(':')
+        else:
+            target_host_and_port = headers['Host'].split(':')
         if len(target_host_and_port)==1:
             target_host = target_host_and_port[0]
-            target_port = 80
+            if method in ['CONNECT']: target_port = 443
+            else: target_port = 80
         else:
             target_host = target_host_and_port[0]
             target_port = int(target_host_and_port[1].strip())
@@ -89,7 +89,7 @@ def do_proxy(host, port, method, uri, request_headers, request, ss):
         response = ''
         got_header = False
         headers = {}
-        while 1:
+        while True:
             buf = c.recv(4096)
             response = response + buf
             ss.send(buf)
@@ -99,7 +99,6 @@ def do_proxy(host, port, method, uri, request_headers, request, ss):
                 logging.debug(response_header)
                 header_length = len(response_header)
                 status_code, headers = parser_response_header(response_header)
-                #logging.debug(str(status_code))
 
             if got_header:
                 '''没有内容，直接返回报文头就行'''
@@ -122,7 +121,6 @@ def do_proxy(host, port, method, uri, request_headers, request, ss):
             if not buf:
                 logging.error('response not buf')
                 break
-        #logging.info(str(status_code)+' response len'+str(len(response)-header_length)+uri[:0])
     except Exception, e:
         logging.warning(str(type(e))+' '+str(e)+' err')
         c.close()
@@ -131,13 +129,37 @@ def do_proxy(host, port, method, uri, request_headers, request, ss):
     c.close()
     ss.close()
 
+def dock_socket(recv, send):
+    try:
+        while True:
+            buf = recv.recv(4096)
+            send.send(buf)
+            if not buf:
+                break
+    except Exception, e:
+        recv.close()
+        send.close()
+    recv.close()
+    send.close()
+
+def do_tunnel(host, port, ss):
+    c = socket.socket()
+    try:
+        c.connect((host,port))
+    except Exception, e:
+        logging.warning('connect err'+host+':'+port)
+    ss.send(tunnel_ok)
+    gevent.joinall([
+        gevent.spawn(dock_socket, ss, c),
+        gevent.spawn(dock_socket, c, ss),
+    ])
+
 def proxyer(ss, add):
-    #logging.debug(ss)
     '''接收http请求'''
     request = ''
     got_header = False
     headers = {}
-    while 1:
+    while True:
         buf = ss.recv(4096)
         request = request + buf
         if not got_header and '\r\n\r\n' in request:
@@ -145,11 +167,12 @@ def proxyer(ss, add):
             request_header = request.split('\r\n\r\n')[0] + '\r\n\r\n'
             header_length = len(request_header)
             host, port, method, uri, headers = parser_request_headers(request_header)
-            if not host or not port or not method in ['HEAD','GET','POST']:
+            if not host or not port or not method in ['HEAD','GET','POST','CONNECT']:
                 logging.warning('parser request err or method not support ,close this task')
+                #logging.debug('\n'+request)
                 ss.close()
                 return
-            if method in ['GET','HEAD']:
+            if method in ['GET','HEAD','CONNECT']:
                 break
         if got_header and method in ['POST']:
             if 'Content-Length' in headers:
@@ -165,20 +188,20 @@ def proxyer(ss, add):
         logging.warning('request err,len = '+str(len(request))+',close this task')
         ss.close()
         return
-    #logging.debug('request length: '+str(len(request)))
     logging.debug('\n'+request)
-    #logging.info(host+':'+str(port)+' '+method+' '+uri[:0])
     
     '''获取目标主机的http应答, 并转发应答包'''
-    #count.dic[os.getpid()] = count.dic.get(os.getpid(),0) + 1
-    #print count.dic,uri
-    do_proxy(host, port, method, uri, headers, request, ss)
-    #count.dic[os.getpid()] = count.dic[os.getpid()] - 1
-    #print count.dic
+    count.dic[os.getpid()] = count.dic.get(os.getpid(),0) + 1
+    print count.dic,uri
+    if method in ['CONNECT']:
+        do_tunnel(host, port, ss)
+    else:
+        do_proxy(host, port, method, uri, headers, request, ss)
+    count.dic[os.getpid()] = count.dic[os.getpid()] - 1
+    print count.dic
     
 if __name__ == '__main__':
-    #gpool = gPool(128)
-    server = StreamServer(('', int(sys.argv[1])), proxyer)#, spawn=gpool)    
+    server = StreamServer(('', int(sys.argv[1])), proxyer)   
     if cpu_count()>1: server.max_accept  = 1
     server.start() 
     pid_list = []
