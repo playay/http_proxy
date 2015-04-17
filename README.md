@@ -18,6 +18,7 @@ python socket 实现的http(s)代理
 
 ##TODO
 连接代理时验证用户名密码
+tunnel_fail的信息还不知道该返回什么
 
 ##更新日志
 http://git.oschina.net/chenyanclyz/httpproxy/blob/master/change_log.md

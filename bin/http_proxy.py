@@ -131,7 +131,7 @@ def do_proxy(host, port, method, uri, request_headers, request, ss):
     c.close()
     ss.close()
 
-def dock_socket(recv, send):
+def dock_socket(recv, send, recv_from_response=False):
     try:
         while True:
             buf = recv.recv(4096)
@@ -142,8 +142,9 @@ def dock_socket(recv, send):
         recv.close()
         send.close()
         return
-    recv.close()
-    send.close()
+    if recv_from_response:
+        recv.close()
+        send.close()
 
 def do_tunnel(host, port, ss):
     c = socket.socket()
@@ -151,12 +152,13 @@ def do_tunnel(host, port, ss):
         c.connect((host,port))
     except Exception, e:
         logging.warning('connect err'+host+':'+str(port))
-        ss.send(TUNNEL_FAIL)
+        #ss.send(TUNNEL_FAIL)
+        ss.close()
         return
     ss.send(TUNNEL_OK)
     gevent.joinall([
-        gevent.spawn(dock_socket, ss, c),
-        gevent.spawn(dock_socket, c, ss),
+        gevent.spawn(dock_socket, ss, c, False),
+        gevent.spawn(dock_socket, c, ss, True),
     ])
 
 def proxyer(ss, add):
