@@ -1,4 +1,7 @@
 #coding:utf-8
+'''
+email: chenyan@feling.net
+'''
 
 import logging
 logging.basicConfig(level=logging.ERROR,
