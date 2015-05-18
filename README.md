@@ -4,7 +4,7 @@ python socket 实现的http代理
 多进程&&协程&&短连接   
 
 ##依赖库(gevent)
-[gevent-1.0.1.tar.gz](http://git.oschina.net/chenyanclyz/httpproxy/blob/master/lib/gevent-1.0.1.tar.gz)    
+[gevent-1.0.1.tar.gz](lib/gevent-1.0.1.tar.gz)    
 1. 解压 `tar -zxvf xxx.tar.gz`   
 2. 编译 `python setup.py build`   
 3. 复制编译后的文件到系统环境 `sudo python setup.py install`    
@@ -30,4 +30,4 @@ python socket 实现的http代理
 不纠结、折腾这点了。。    
 
 ##更新日志
-http://git.oschina.net/chenyanclyz/httpproxy/blob/master/change_log.md
+[change_log.md](change_log.md)
