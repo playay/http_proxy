@@ -15,10 +15,6 @@ python socket 实现的http代理
 + lib/ 第三方库的安装包   
 + protocol/ http协议的相关文档   
 
-##TODO
-+ python3的版本
-+ 连接代理时验证用户名密码    
-+ tunnel_fail的信息还不知道该返回什么    
 
 ##讲在后面
 程序部署到阿里云的硅谷主机上，多数网站都能正常访问，但是很奇怪：    
