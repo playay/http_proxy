@@ -157,6 +157,7 @@ def do_tunnel(host, port, ss):
         logging.warning('connect err'+host+':'+str(port))
         #ss.send(TUNNEL_FAIL)
         ss.close()
+        c.close()
         return
     ss.send(TUNNEL_OK)
     gevent.joinall([
