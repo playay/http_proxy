@@ -1,4 +1,5 @@
 #coding:utf-8
+#!/usr/bin/python
 '''
 email: chenyan@feling.net
 '''
