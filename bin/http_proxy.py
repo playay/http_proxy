@@ -1,10 +1,8 @@
-#coding:utf-8
 #!/usr/bin/python
-'''
-email: chenyan@feling.net
-'''
+#coding:utf-8
 
 import logging
+
 logging.basicConfig(level=logging.ERROR,
                 format='%(asctime)s [line:%(lineno)d] %(levelname)s %(message)s',
                 #format='%(asctime)s %(filename)s[line:%(lineno)d] %(levelname)s %(message)s',
